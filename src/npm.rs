@@ -2,6 +2,11 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+pub struct NpmPackage {
+    pub json: serde_json::Value,
+    pub parsed: NpmResolvedPackage,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct NpmResolvedPackage {
     pub _id: String,
@@ -42,7 +47,7 @@ pub struct NpmVersionDistSignatures {
     pub sig: String,
 }
 
-type Version = String;
-type VersionRangeSpecifier = String;
-type ChecksumString = String;
-type UrlString = String;
+pub type Version = String;
+pub type VersionRangeSpecifier = String;
+pub type ChecksumString = String;
+pub type UrlString = String;
