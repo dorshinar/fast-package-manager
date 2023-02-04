@@ -3,8 +3,7 @@
 use std::{env, error::Error, fs};
 
 use fast_package_manager::{
-    get_deps_with_versions, get_package, get_tar, resolve_version_from_tag, DEPS_FOLDER,
-    TEMP_FOLDER,
+    npm_network_adapter::NpmNetworkAdapter, PackageFetcher, DEPS_FOLDER, TEMP_FOLDER,
 };
 
 #[tokio::main]
@@ -19,14 +18,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let package_name = args.next().unwrap_or(String::from("is-even"));
 
-    let package = get_package(&package_name).await?;
+    let network_adapter = NpmNetworkAdapter::new();
+    let fetcher = PackageFetcher::new(&network_adapter);
 
-    let version = resolve_version_from_tag(&package, &String::from("latest")).unwrap();
-    let tarball = &version.dist.tarball;
-
-    let _deps = get_deps_with_versions(&version.dependencies).await;
-
-    get_tar(&package_name, &tarball).await?;
+    fetcher.install_package(&package_name).await?;
 
     Ok(())
 }
