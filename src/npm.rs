@@ -44,7 +44,7 @@ pub struct NpmVersionDistSignature {
 }
 
 /// A semver-compatible version identifier.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq, Into)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq, Into, Display)]
 #[serde(try_from = "String", into = "String")]
 pub struct Version(String);
 
