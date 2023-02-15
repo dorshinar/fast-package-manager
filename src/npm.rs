@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use derive_more::{Deref, Display, Into};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
@@ -16,11 +17,11 @@ pub struct NpmResolvedPackage {
     #[serde(rename(deserialize = "dist-tags"))]
     pub dist_tags: HashMap<String, Version>,
 
-    pub versions: HashMap<Version, NpmPackageVersion>,
+    pub versions: IndexMap<Version, NpmPackageVersion>,
     pub modified: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Clone)]
 pub struct NpmPackageVersion {
     pub name: String,
     pub version: Version,
@@ -29,7 +30,7 @@ pub struct NpmPackageVersion {
     pub engines: Option<HashMap<String, VersionRangeSpecifier>>,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq)]
 pub struct NpmVersionDist {
     pub shasum: String,
     pub tarball: UrlString,
@@ -37,14 +38,14 @@ pub struct NpmVersionDist {
     pub signatures: Vec<NpmVersionDistSignature>,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq)]
 pub struct NpmVersionDistSignature {
     pub keyid: String,
     pub sig: String,
 }
 
 /// A semver-compatible version identifier.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq, Into, Display)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq, Into, Display, Deref)]
 #[serde(try_from = "String", into = "String")]
 pub struct Version(String);
 
@@ -107,6 +108,32 @@ impl TryFrom<String> for UrlString {
     type Error = UrlStringParseError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(Self(value))
+    }
+}
+
+/// A dependency tree that represents the concrete versions that packages depend on
+/// and that should be downloaded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[pin_project::pin_project]
+pub struct ResolvedDependencyTree {
+    name: String,
+    version: NpmPackageVersion,
+
+    #[pin]
+    dependencies: Vec<ResolvedDependencyTree>,
+}
+
+impl ResolvedDependencyTree {
+    pub fn new(
+        name: String,
+        version: NpmPackageVersion,
+        dependencies: Vec<ResolvedDependencyTree>,
+    ) -> Self {
+        Self {
+            name,
+            version,
+            dependencies,
+        }
     }
 }
 
