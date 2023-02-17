@@ -34,8 +34,16 @@ pub struct NpmPackageVersion {
 pub struct NpmVersionDist {
     pub shasum: String,
     pub tarball: UrlString,
-    pub integrity: String,
-    pub signatures: Vec<NpmVersionDistSignature>,
+    pub integrity: Option<String>,
+
+    #[serde(rename(deserialize = "fileCount"))]
+    pub file_count: Option<i32>,
+    #[serde(rename(deserialize = "unpackedSize"))]
+    pub unpacked_size: Option<i32>,
+    #[serde(rename(deserialize = "npm-signatures"))]
+    pub npm_signatures: Option<String>,
+
+    pub signatures: Option<Vec<NpmVersionDistSignature>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq)]
@@ -113,13 +121,10 @@ impl TryFrom<String> for UrlString {
 
 /// A dependency tree that represents the concrete versions that packages depend on
 /// and that should be downloaded.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[pin_project::pin_project]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedDependencyTree {
     name: String,
     version: NpmPackageVersion,
-
-    #[pin]
     dependencies: Vec<ResolvedDependencyTree>,
 }
 

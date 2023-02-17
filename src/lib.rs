@@ -9,9 +9,9 @@ use npm_tar_extractor::NpmTarExtractor;
 use response_writer::ResponseWriter;
 use serde_json::{json, Value};
 
-mod dependency_resolver;
+pub mod dependency_resolver;
 mod http;
-mod npm;
+pub mod npm;
 mod npm_tar_extractor;
 pub mod package_fetcher;
 mod response_writer;

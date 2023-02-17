@@ -1,3 +1,5 @@
+use std::error;
+
 use derive_more::Display;
 
 use crate::npm::{NpmResolvedPackage, UrlString};
@@ -11,7 +13,7 @@ pub enum Error {
     HttpError,
 }
 
-pub async fn get_npm_package(name: String) -> Result<NpmResolvedPackage, Error> {
+pub async fn get_npm_package(name: &String) -> Result<NpmResolvedPackage, Box<dyn error::Error>> {
     let package_url = format!("{NPM_REGISTRY_URL}{name}");
     println!("fetching {package_url}...");
 
@@ -22,22 +24,20 @@ pub async fn get_npm_package(name: String) -> Result<NpmResolvedPackage, Error> 
         .await
     {
         Ok(response) => response,
-        Err(_) => return Err(Error::HttpError),
+        Err(_) => return Err(Box::new(Error::HttpError)),
     };
 
-    let response = match response.text().await {
-        Ok(response) => response,
-        Err(_) => return Err(Error::HttpError),
-    };
-
-    let resolved = match serde_json::from_str(response.as_str()) {
-        Ok(response) => response,
-        Err(_) => return Err(Error::HttpError),
-    };
-    Ok(resolved)
+    match response.json().await {
+        Ok(response) => {
+            return Ok(response);
+        }
+        Err(error) => {
+            println!("{:?}", error);
+            return Err(Box::new(error));
+        }
+    }
 }
 
 pub async fn get_package_tar(tarball: &UrlString) -> Result<reqwest::Response, reqwest::Error> {
     Ok(reqwest::Client::new().get(tarball.as_str()).send().await?)
 }
-// }

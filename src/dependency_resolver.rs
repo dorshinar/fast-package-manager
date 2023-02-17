@@ -1,15 +1,9 @@
 use std::{
-    borrow::Borrow,
-    cell::RefCell,
     collections::{HashMap, HashSet},
-    pin::Pin,
-    rc::Rc,
-    sync::Arc,
+    error,
 };
 
-use async_recursion::async_recursion;
 use futures::{future::join_all, FutureExt};
-use tokio::sync::Mutex;
 
 use crate::{
     http::get_npm_package,
@@ -17,121 +11,130 @@ use crate::{
     version_range_resolver::resolve_version_from_version_range,
 };
 
-#[async_recursion]
-pub async fn resolve_deps(
-    deps: HashMap<String, VersionRangeSpecifier>,
-    // resolved_tree: Arc<Mutex<HashMap<String, ResolvedDependencyTree>>>,
-) {
-    if deps.len() == 0 {
-        return;
-    }
-
-    let mut fetched_descriptor_names = HashSet::new();
-    let fetched_ranges: Arc<
-        Mutex<HashMap<String, HashMap<VersionRangeSpecifier, &NpmPackageVersion>>>,
-    > = Arc::new(Mutex::new(HashMap::new()));
-
-    let mut futures = vec![];
-
-    // Iterating over all of the dependencies, and fetching their metadata
-    for (dep_name, range) in deps.iter() {
-        // This is not good enough - we need to resolve the dependencies with the `range`, but we can skip the `get_npm_package`
-        // if fetched_descriptor_names.contains(dep_name.clone()) {
-        // Already fetched this package, no need to do it again
-        // continue;
-        // }
-
-        let fetched_ranges = Arc::clone(&fetched_ranges);
-
-        let future = get_npm_package(dep_name.to_string().clone()).then(move |resolved| {
-            async move {
-                // We have the metadata of a dependency
-                // Now we need to figure out which version is the relevant one, and fetch its dependencies
-                match resolved {
-                    Ok(package) => {
-                        let (package, version) = resolve_version_from_version_range(package, range);
-
-                        let version = version.expect("failed to find matching version");
-
-                        // We update the fetched ranges so we can skip it in the future
-                        if !fetched_ranges.lock().await.contains_key(dep_name) {
-                            fetched_ranges
-                                .lock()
-                                .await
-                                .insert(dep_name.to_owned(), HashMap::new());
-                        }
-
-                        if let Some(dep_fetched_ranges) =
-                            fetched_ranges.lock().await.get_mut(dep_name)
-                        {
-                            if !dep_fetched_ranges.contains_key(range) {
-                                dep_fetched_ranges.insert(range.clone(), &version);
-                            }
-                        };
-
-                        // We get the list of packages `dep_name` depends on and the ranges, and fetch them recursively
-                        // let result = if let Some(package_deps) = &version.dependencies {
-                        //     resolve_deps(package_deps.to_owned()).await
-                        // } else {
-                        //     ()
-                        // };
-
-                        // result
-                    }
-                    Err(e) => panic!("{:?}", e),
-                }
-            }
-        });
-
-        futures.push(future);
-        fetched_descriptor_names.insert(dep_name.clone());
-    }
-
-    let result = join_all(futures).await;
+#[derive(Debug, derive_more::Display, derive_more::Error)]
+pub enum Error {
+    DependencyResolveError,
+    VersionDoesNotExist,
 }
 
-// async fn get_package(
-//     dep_name: &String,
-// ) -> Option<Pin<Box<HashMap<String, ResolvedDependencyTree>>>> {
-//     get_npm_package(dep_name.to_string().clone())
-//         .then(move |resolved| {
-//             async move {
-//                 // We have the metadata of a dependency
-//                 // Now we need to figure out which version is the relevant one, and fetch its dependencies
-//                 match resolved {
-//                     Ok(package) => {
-//                         let (package, version) = resolve_version_from_version_range(package, range);
+pub async fn resolve_deps(
+    dep_name: String,
+    dep_version_range: VersionRangeSpecifier,
+) -> Result<ResolvedDependencyTree, Box<dyn error::Error>> {
+    let dep_name_copy = dep_name.to_owned();
+    let dep_version_range_copy = dep_version_range.to_owned();
 
-//                         let version = version.expect("failed to find matching version");
+    let mut package_to_get_from_npm = HashSet::new();
+    package_to_get_from_npm.insert((dep_name, dep_version_range));
 
-//                         // We update the fetched ranges so we can skip it in the future
-//                         if !fetched_ranges.lock().await.contains_key(dep_name) {
-//                             fetched_ranges
-//                                 .lock()
-//                                 .await
-//                                 .insert(dep_name.to_owned(), HashMap::new());
-//                         }
+    let mut resolved_versions: HashMap<String, HashMap<VersionRangeSpecifier, NpmPackageVersion>> =
+        HashMap::new();
 
-//                         if let Some(dep_fetched_ranges) =
-//                             fetched_ranges.lock().await.get_mut(dep_name)
-//                         {
-//                             if !dep_fetched_ranges.contains_key(range) {
-//                                 dep_fetched_ranges.insert(range.clone(), version);
-//                             }
-//                         }
+    while !package_to_get_from_npm.is_empty() {
+        let mut futures = Vec::new();
+        for package in package_to_get_from_npm.iter() {
+            let future = get_npm_package_version(&package.0, &package.1)
+                .then(|version| async { (package.1.to_owned(), version) });
+            futures.push(future);
+        }
 
-//                         // We get the list of packages `dep_name` depends on and the ranges, and fetch them recursively
-//                         let result = if let Some(package_deps) = &version.dependencies {
-//                             Some(resolve_deps(package_deps.to_owned()))
-//                         } else {
-//                             None
-//                         };
+        let versions = join_all(futures).await;
 
-//                         result
-//                     }
-//                     Err(e) => panic!("{:?}", e),
-//                 }
-//             }
-//         })
-//         .await
-// }
+        package_to_get_from_npm.clear();
+
+        for (range, version) in versions {
+            match version {
+                Ok(version) => {
+                    if let Some(deps) = &version.dependencies {
+                        for dep in deps {
+                            package_to_get_from_npm.insert((dep.0.to_owned(), dep.1.to_owned()));
+                        }
+                    }
+
+                    match resolved_versions.get_mut(&version.name) {
+                        Some(range_to_versions) => {
+                            range_to_versions.insert(range, version);
+                        }
+                        None => {
+                            let version_name = version.name.clone();
+
+                            let mut range_to_version = HashMap::new();
+                            range_to_version.insert(range, version);
+                            resolved_versions.insert(version_name, range_to_version);
+                        }
+                    }
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    construct_dependency_tree(&dep_name_copy, &dep_version_range_copy, &resolved_versions)
+}
+
+fn construct_dependency_tree(
+    root_name: &String,
+    root_range: &VersionRangeSpecifier,
+    resolved_versions: &HashMap<String, HashMap<VersionRangeSpecifier, NpmPackageVersion>>,
+) -> Result<ResolvedDependencyTree, Box<dyn error::Error>> {
+    let root_resolved_version = match resolved_versions.get(root_name) {
+        Some(versions) => versions.get(&root_range),
+        None => None,
+    };
+
+    let root_resolved_version = match root_resolved_version {
+        Some(version) => version.to_owned(),
+        None => {
+            return Err(Box::new(Error::VersionDoesNotExist));
+        }
+    };
+
+    let deps = match &root_resolved_version.dependencies {
+        Some(deps) => {
+            let mut trees = Vec::new();
+
+            for (dep_name, dep_range) in deps {
+                match construct_dependency_tree(dep_name, dep_range, resolved_versions) {
+                    Ok(tree) => {
+                        trees.push(tree);
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+
+            trees
+        }
+        None => Vec::new(),
+    };
+
+    let dep_tree = ResolvedDependencyTree::new(root_name.to_owned(), root_resolved_version, deps);
+    Ok(dep_tree)
+}
+
+async fn get_npm_package_version(
+    package_name: &String,
+    version: &VersionRangeSpecifier,
+) -> Result<NpmPackageVersion, Box<dyn error::Error>> {
+    let package = get_npm_package(package_name).await?;
+
+    resolve_version_from_version_range(&package, version).map_err(|error| error.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn resolves_deps() {
+        let resolved = resolve_deps(
+            String::from("create-react-app"),
+            VersionRangeSpecifier::new(String::from("latest")),
+        )
+        .await
+        .expect("failed to get deps");
+
+        println!("{:#?}", serde_json::to_string(&resolved).unwrap())
+    }
+}
