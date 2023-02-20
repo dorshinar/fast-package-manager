@@ -1,21 +1,16 @@
-use std::{
-    error::Error,
-    fs::{self, File},
-    io::BufReader,
-};
-
-use npm_tar_extractor::NpmTarExtractor;
-// use package_fetcher::PackageFetcher;
-use response_writer::ResponseWriter;
-use serde_json::{json, Value};
-
 pub mod dependency_resolver;
+mod extract_npm_tgz;
 mod http;
+pub mod install_package;
 pub mod npm;
-mod npm_tar_extractor;
-pub mod package_fetcher;
+pub mod npm_fs;
+pub mod old;
+mod resolve_version_range;
 mod response_writer;
-mod version_range_resolver;
+
+pub const TEMP_FOLDER: &str = ".fpm";
+pub const DEPS_FOLDER: &str = "node_modules";
+pub const STORE_FOLDER: &str = "node_modules/.fpm";
 
 // pub async fn install_package(package_name: &String) -> Result<(), Box<dyn Error>> {
 //     let network_adapter = NpmNetworkAdapter::new();

@@ -7,8 +7,8 @@ use futures::{future::join_all, FutureExt};
 
 use crate::{
     http::get_npm_package,
-    npm::{NpmPackageVersion, ResolvedDependencyTree, VersionRangeSpecifier},
-    version_range_resolver::resolve_version_from_version_range,
+    npm::{NpmPackageVersion, ResolvedDependencyTree, UrlString, VersionRangeSpecifier},
+    resolve_version_range::resolve_version_from_version_range,
 };
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
@@ -20,7 +20,7 @@ pub enum Error {
 pub async fn resolve_deps(
     dep_name: String,
     dep_version_range: VersionRangeSpecifier,
-) -> Result<ResolvedDependencyTree, Box<dyn error::Error>> {
+) -> Result<(ResolvedDependencyTree, HashMap<String, UrlString>), Box<dyn error::Error>> {
     let dep_name_copy = dep_name.to_owned();
     let dep_version_range_copy = dep_version_range.to_owned();
 
@@ -29,6 +29,8 @@ pub async fn resolve_deps(
 
     let mut resolved_versions: HashMap<String, HashMap<VersionRangeSpecifier, NpmPackageVersion>> =
         HashMap::new();
+
+    let mut tarballs = HashMap::new();
 
     while !package_to_get_from_npm.is_empty() {
         let mut futures = Vec::new();
@@ -51,6 +53,8 @@ pub async fn resolve_deps(
                         }
                     }
 
+                    tarballs.insert(version.name.clone(), version.dist.tarball.clone());
+
                     match resolved_versions.get_mut(&version.name) {
                         Some(range_to_versions) => {
                             range_to_versions.insert(range, version);
@@ -72,6 +76,7 @@ pub async fn resolve_deps(
     }
 
     construct_dependency_tree(&dep_name_copy, &dep_version_range_copy, &resolved_versions)
+        .map(|tree| (tree, tarballs))
 }
 
 fn construct_dependency_tree(
@@ -135,6 +140,6 @@ mod tests {
         .await
         .expect("failed to get deps");
 
-        println!("{:#?}", serde_json::to_string(&resolved).unwrap())
+        println!("{:#?}", serde_json::to_string(&resolved.0).unwrap())
     }
 }

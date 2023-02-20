@@ -1,6 +1,4 @@
 use crate::npm::{NpmPackageVersion, UrlString, Version, VersionRangeSpecifier};
-use crate::npm_tar_extractor::Extract;
-use crate::response_writer::WriteResponse;
 use async_recursion::async_recursion;
 use derive_more::Display;
 use futures::future::join_all;
@@ -9,9 +7,6 @@ use reqwest::Url;
 use std::collections::HashMap;
 use std::error::{self, Error};
 use std::path::Path;
-
-pub const TEMP_FOLDER: &str = ".fpm";
-pub const DEPS_FOLDER: &str = "node_modules";
 
 // pub struct PackageFetcher<'a, Network: NetworkAdapter, Writer: WriteResponse, Extractor: Extract> {
 //     network_adapter: &'a Network,

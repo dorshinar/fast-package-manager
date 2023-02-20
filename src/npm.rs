@@ -30,7 +30,7 @@ pub struct NpmPackageVersion {
     pub engines: Option<HashMap<String, VersionRangeSpecifier>>,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq, Hash)]
 pub struct NpmVersionDist {
     pub shasum: String,
     pub tarball: UrlString,
@@ -46,7 +46,7 @@ pub struct NpmVersionDist {
     pub signatures: Option<Vec<NpmVersionDistSignature>>,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq, Hash)]
 pub struct NpmVersionDistSignature {
     pub keyid: String,
     pub sig: String,

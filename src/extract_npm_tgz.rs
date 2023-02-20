@@ -7,39 +7,6 @@ use std::{
 use flate2::read::GzDecoder;
 use tar::Archive;
 
-pub trait Extract {
-    fn extract_tar_gz(&self, path: &PathBuf, dest: &PathBuf) -> Result<(), Box<dyn Error>>;
-}
-
-pub struct NpmTarExtractor;
-
-impl NpmTarExtractor {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Extract for NpmTarExtractor {
-    fn extract_tar_gz(&self, path: &PathBuf, dest: &PathBuf) -> Result<(), Box<dyn Error>> {
-        let tar_gz_file = File::open(&path)?;
-        let tar_file = GzDecoder::new(tar_gz_file);
-
-        let mut archive = Archive::new(tar_file);
-
-        fs::create_dir_all(&dest)?;
-
-        for file in archive.entries().unwrap() {
-            let mut file = file.unwrap();
-
-            let file_path = file.path().unwrap();
-            let file_path = file_path.strip_prefix("package")?;
-            file.unpack(dest.join(file_path))?;
-        }
-
-        Ok(())
-    }
-}
-
 // #[cfg(test)]
 // mod tests {
 //     use std::{fs, io::Write, path::Path};
