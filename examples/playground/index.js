@@ -1,4 +1,4 @@
-const isNumber = require("is-number");
+const isEven = require("is-even");
 
-console.log(`isNumber(1) === ${isNumber(1)}`);
-console.log(`isNumber('a') === ${isNumber("a")}`);
+console.log(`isEven(1) === ${isEven(1)}`);
+console.log(`isEven(2) === ${isEven(2)}`);

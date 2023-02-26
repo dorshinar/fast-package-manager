@@ -25,7 +25,9 @@ pub struct NpmResolvedPackage {
 pub struct NpmPackageVersion {
     pub name: String,
     pub version: Version,
-    pub dependencies: Option<HashMap<String, VersionRangeSpecifier>>,
+
+    #[serde(default = "HashMap::new")]
+    pub dependencies: HashMap<String, VersionRangeSpecifier>,
     pub dist: NpmVersionDist,
     pub engines: Option<HashMap<String, VersionRangeSpecifier>>,
 }
@@ -102,7 +104,7 @@ pub enum VersionRangeSpecifierParseError {
 impl std::error::Error for VersionRangeSpecifierParseError {}
 
 /// A string containing fully-formed URL.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq, Deref, Into)]
+#[derive(Display, Debug, Clone, Deserialize, Serialize, PartialEq, Hash, Eq, Deref, Into)]
 #[serde(try_from = "String", into = "String")]
 pub struct UrlString(String);
 
@@ -123,9 +125,9 @@ impl TryFrom<String> for UrlString {
 /// and that should be downloaded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedDependencyTree {
-    name: String,
-    version: NpmPackageVersion,
-    dependencies: Vec<ResolvedDependencyTree>,
+    pub name: String,
+    pub version: NpmPackageVersion,
+    pub dependencies: Vec<ResolvedDependencyTree>,
 }
 
 impl ResolvedDependencyTree {
@@ -138,6 +140,29 @@ impl ResolvedDependencyTree {
             name,
             version,
             dependencies,
+        }
+    }
+}
+
+/// A dependency tree that represents the concrete versions that packages depend on
+/// and that should be downloaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedDependencies {
+    pub version: NpmPackageVersion,
+    pub dependencies: Vec<NpmPackageVersion>,
+    pub is_root: bool,
+}
+
+impl ResolvedDependencies {
+    pub fn new(
+        version: NpmPackageVersion,
+        dependencies: Vec<NpmPackageVersion>,
+        is_root: bool,
+    ) -> Self {
+        Self {
+            version,
+            dependencies,
+            is_root,
         }
     }
 }

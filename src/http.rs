@@ -15,7 +15,6 @@ pub enum Error {
 
 pub async fn get_npm_package(name: &String) -> Result<NpmResolvedPackage, Box<dyn error::Error>> {
     let package_url = format!("{NPM_REGISTRY_URL}{name}");
-    println!("fetching {package_url}...");
 
     let response = match reqwest::Client::new()
         .get(package_url)

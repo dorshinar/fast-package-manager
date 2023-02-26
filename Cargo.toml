@@ -27,4 +27,5 @@ serde_json = { version = "1.0.91", features = ["preserve_order"] }
 tar = "0.4.38"
 tempfile = "3.3.0"
 tokio = { version = "1.25.0", features = ["full"] }
-tokio-util = { version = "0.7.7", features = ["compat"] }
+tokio-tar = "0.3.0"
+tokio-util = { version = "0.7.7", features = ["compat", "io-util"] }

@@ -7,7 +7,7 @@ use futures::{future::join_all, FutureExt};
 
 use crate::{
     http::get_npm_package,
-    npm::{NpmPackageVersion, ResolvedDependencyTree, UrlString, VersionRangeSpecifier},
+    npm::{NpmPackageVersion, ResolvedDependencies, ResolvedDependencyTree, VersionRangeSpecifier},
     resolve_version_range::resolve_version_from_version_range,
 };
 
@@ -20,23 +20,26 @@ pub enum Error {
 pub async fn resolve_deps(
     dep_name: String,
     dep_version_range: VersionRangeSpecifier,
-) -> Result<(ResolvedDependencyTree, HashMap<String, UrlString>), Box<dyn error::Error>> {
-    let dep_name_copy = dep_name.to_owned();
-    let dep_version_range_copy = dep_version_range.to_owned();
-
+) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
     let mut package_to_get_from_npm = HashSet::new();
-    package_to_get_from_npm.insert((dep_name, dep_version_range));
+    package_to_get_from_npm.insert((dep_name, dep_version_range, true));
 
-    let mut resolved_versions: HashMap<String, HashMap<VersionRangeSpecifier, NpmPackageVersion>> =
-        HashMap::new();
+    let mut resolved_versions: HashMap<
+        String,
+        HashMap<VersionRangeSpecifier, (NpmPackageVersion, bool)>,
+    > = HashMap::new();
 
-    let mut tarballs = HashMap::new();
+    let mut fetched_packages = HashSet::new();
 
     while !package_to_get_from_npm.is_empty() {
         let mut futures = Vec::new();
         for package in package_to_get_from_npm.iter() {
+            if fetched_packages.contains(&package.0) {
+                continue;
+            }
             let future = get_npm_package_version(&package.0, &package.1)
-                .then(|version| async { (package.1.to_owned(), version) });
+                .then(|version| async { (package.1.to_owned(), version, package.2) });
+            fetched_packages.insert(package.0.clone());
             futures.push(future);
         }
 
@@ -44,26 +47,38 @@ pub async fn resolve_deps(
 
         package_to_get_from_npm.clear();
 
-        for (range, version) in versions {
+        for (range, version, is_root) in versions {
             match version {
                 Ok(version) => {
-                    if let Some(deps) = &version.dependencies {
-                        for dep in deps {
-                            package_to_get_from_npm.insert((dep.0.to_owned(), dep.1.to_owned()));
+                    for dep in &version.dependencies {
+                        match resolved_versions.get(dep.0) {
+                            Some(ranges) if !ranges.contains_key(dep.1) => {
+                                package_to_get_from_npm.insert((
+                                    dep.0.to_owned(),
+                                    dep.1.to_owned(),
+                                    false,
+                                ));
+                            }
+                            Some(_) => {}
+                            None => {
+                                package_to_get_from_npm.insert((
+                                    dep.0.to_owned(),
+                                    dep.1.to_owned(),
+                                    false,
+                                ));
+                            }
                         }
                     }
 
-                    tarballs.insert(version.name.clone(), version.dist.tarball.clone());
-
                     match resolved_versions.get_mut(&version.name) {
                         Some(range_to_versions) => {
-                            range_to_versions.insert(range, version);
+                            range_to_versions.insert(range, (version, is_root));
                         }
                         None => {
                             let version_name = version.name.clone();
 
                             let mut range_to_version = HashMap::new();
-                            range_to_version.insert(range, version);
+                            range_to_version.insert(range, (version, is_root));
                             resolved_versions.insert(version_name, range_to_version);
                         }
                     }
@@ -75,11 +90,38 @@ pub async fn resolve_deps(
         }
     }
 
-    construct_dependency_tree(&dep_name_copy, &dep_version_range_copy, &resolved_versions)
-        .map(|tree| (tree, tarballs))
+    construct_dependency_vec(resolved_versions)
 }
 
-fn construct_dependency_tree(
+pub fn construct_dependency_vec(
+    resolved: HashMap<String, HashMap<VersionRangeSpecifier, (NpmPackageVersion, bool)>>,
+) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
+    let mut resolved_deps = vec![];
+
+    for (_package, ranges) in resolved.iter() {
+        for (_range, (version, is_root)) in ranges {
+            let mut dependencies = vec![];
+
+            for dep in &version.dependencies {
+                if let Some(ranges) = resolved.get(dep.0) {
+                    if let Some((version, _)) = ranges.get(dep.1) {
+                        dependencies.push(version.to_owned())
+                    }
+                }
+            }
+
+            resolved_deps.push(ResolvedDependencies::new(
+                version.to_owned(),
+                dependencies,
+                is_root.to_owned(),
+            ));
+        }
+    }
+
+    Ok(resolved_deps)
+}
+
+pub fn construct_dependency_tree(
     root_name: &String,
     root_range: &VersionRangeSpecifier,
     resolved_versions: &HashMap<String, HashMap<VersionRangeSpecifier, NpmPackageVersion>>,
@@ -96,25 +138,18 @@ fn construct_dependency_tree(
         }
     };
 
-    let deps = match &root_resolved_version.dependencies {
-        Some(deps) => {
-            let mut trees = Vec::new();
+    let mut trees = Vec::new();
 
-            for (dep_name, dep_range) in deps {
-                match construct_dependency_tree(dep_name, dep_range, resolved_versions) {
-                    Ok(tree) => {
-                        trees.push(tree);
-                    }
-                    Err(error) => return Err(error),
-                }
+    for (dep_name, dep_range) in &root_resolved_version.dependencies {
+        match construct_dependency_tree(dep_name, dep_range, resolved_versions) {
+            Ok(tree) => {
+                trees.push(tree);
             }
-
-            trees
+            Err(error) => return Err(error),
         }
-        None => Vec::new(),
-    };
+    }
 
-    let dep_tree = ResolvedDependencyTree::new(root_name.to_owned(), root_resolved_version, deps);
+    let dep_tree = ResolvedDependencyTree::new(root_name.to_owned(), root_resolved_version, trees);
     Ok(dep_tree)
 }
 
@@ -140,6 +175,6 @@ mod tests {
         .await
         .expect("failed to get deps");
 
-        println!("{:#?}", serde_json::to_string(&resolved.0).unwrap())
+        println!("{:#?}", serde_json::to_string(&resolved).unwrap())
     }
 }

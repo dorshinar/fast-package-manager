@@ -1,27 +1,14 @@
 pub mod dependency_resolver;
-mod extract_npm_tgz;
+pub mod downloader;
+mod hardlink;
 mod http;
 pub mod install_package;
 pub mod npm;
-pub mod npm_fs;
-pub mod old;
 mod resolve_version_range;
-mod response_writer;
+mod symlink;
 
-pub const TEMP_FOLDER: &str = ".fpm";
+pub const STORE_FOLDER: &str = ".fpm";
 pub const DEPS_FOLDER: &str = "node_modules";
-pub const STORE_FOLDER: &str = "node_modules/.fpm";
-
-// pub async fn install_package(package_name: &String) -> Result<(), Box<dyn Error>> {
-//     let network_adapter = NpmNetworkAdapter::new();
-//     let fs_adapter = ResponseWriter::new();
-//     let tar_ext = NpmTarExtractor::new();
-//     // let fetcher = PackageFetcher::new(&network_adapter, &fs_adapter, &tar_ext);
-
-//     let installed_version = fetcher.install_package(&package_name).await?;
-
-//     add_package_to_package_json(package_name, &installed_version)
-// }
 
 // fn add_package_to_package_json(
 //     package_name: &String,
