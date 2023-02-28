@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "is-even": "^1.0.0"
+    "is-even": "^1.0.0",
+    "create-react-app": "^5.0.1"
   }
 }

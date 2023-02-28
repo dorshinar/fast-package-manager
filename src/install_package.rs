@@ -1,11 +1,15 @@
 use futures::future::join_all;
-use std::error::{self};
+use std::{
+    collections::HashMap,
+    error::{self},
+};
 
 use crate::{
     dependency_resolver::resolve_deps,
     downloader::download_packages,
     hardlink::hardlink_package,
     npm::VersionRangeSpecifier,
+    package_manifest::update_package_manifest,
     symlink::{symlink_dep, symlink_direct},
 };
 
@@ -13,7 +17,7 @@ pub async fn install_package(
     dep_name: String,
     dep_version_range: VersionRangeSpecifier,
 ) -> Result<(), Box<dyn error::Error>> {
-    let resolved_deps = resolve_deps(dep_name, dep_version_range).await?;
+    let resolved_deps = resolve_deps(dep_name.clone(), dep_version_range.clone()).await?;
 
     let top_level = download_packages(&resolved_deps).await?;
 
@@ -54,6 +58,12 @@ pub async fn install_package(
 
     if let Some(top_level) = top_level {
         symlink_direct(&top_level.version.name, &top_level.version.version).await?;
+
+        update_package_manifest(HashMap::from([(
+            top_level.version.name,
+            VersionRangeSpecifier::new(format!("^{}", top_level.version.version)),
+        )]))
+        .await?;
     }
 
     Ok(())

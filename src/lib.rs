@@ -4,6 +4,7 @@ mod hardlink;
 mod http;
 pub mod install_package;
 pub mod npm;
+mod package_manifest;
 mod resolve_version_range;
 mod symlink;
 
