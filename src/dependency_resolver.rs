@@ -18,11 +18,13 @@ pub enum Error {
 }
 
 pub async fn resolve_deps(
-    dep_name: String,
-    dep_version_range: VersionRangeSpecifier,
+    deps: HashMap<String, VersionRangeSpecifier>,
 ) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
     let mut package_to_get_from_npm = HashSet::new();
-    package_to_get_from_npm.insert((dep_name, dep_version_range, true));
+
+    for (dep_name, dep_version_range) in deps {
+        package_to_get_from_npm.insert((dep_name, dep_version_range, true));
+    }
 
     let mut resolved_versions: HashMap<
         String,
@@ -160,21 +162,4 @@ async fn get_npm_package_version(
     let package = get_npm_package(package_name).await?;
 
     resolve_version_from_version_range(&package, version).map_err(|error| error.into())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn resolves_deps() {
-        let resolved = resolve_deps(
-            String::from("create-react-app"),
-            VersionRangeSpecifier::new(String::from("latest")),
-        )
-        .await
-        .expect("failed to get deps");
-
-        println!("{:#?}", serde_json::to_string(&resolved).unwrap())
-    }
 }

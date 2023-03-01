@@ -14,10 +14,9 @@ use crate::{
 };
 
 pub async fn install_package(
-    dep_name: String,
-    dep_version_range: VersionRangeSpecifier,
+    deps: HashMap<String, VersionRangeSpecifier>,
 ) -> Result<(), Box<dyn error::Error>> {
-    let resolved_deps = resolve_deps(dep_name.clone(), dep_version_range.clone()).await?;
+    let resolved_deps = resolve_deps(deps).await?;
 
     let top_level = download_packages(&resolved_deps).await?;
 
@@ -56,12 +55,12 @@ pub async fn install_package(
             .collect::<Vec<_>>()
     );
 
-    if let Some(top_level) = top_level {
-        symlink_direct(&top_level.version.name, &top_level.version.version).await?;
+    for top_level_dep in top_level {
+        symlink_direct(&top_level_dep.version.name, &top_level_dep.version.version).await?;
 
         update_package_manifest(HashMap::from([(
-            top_level.version.name,
-            VersionRangeSpecifier::new(format!("^{}", top_level.version.version)),
+            top_level_dep.version.name,
+            VersionRangeSpecifier::new(format!("^{}", top_level_dep.version.version)),
         )]))
         .await?;
     }

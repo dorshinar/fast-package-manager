@@ -30,13 +30,23 @@ pub async fn symlink_dep(
 }
 
 pub async fn symlink_direct(name: &String, version: &Version) -> Result<()> {
-    let original = Path::new(".")
+    let path_base = if name.starts_with("@") {
+        Path::new("../")
+    } else {
+        Path::new(".")
+    };
+
+    let original = path_base
         .join(STORE_FOLDER)
         .join(format!("{}@{}", name, version))
         .join(DEPS_FOLDER)
         .join(name);
 
     let link = Path::new(DEPS_FOLDER).join(name);
+
+    if let Some(parent) = link.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
 
     task::spawn_blocking(|| fs::symlink(original, link)).await?
 }

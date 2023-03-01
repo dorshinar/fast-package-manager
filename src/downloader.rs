@@ -25,8 +25,8 @@ use crate::{
 /// returns the top level package, if specified.
 pub async fn download_packages(
     packages: &Vec<ResolvedDependencies>,
-) -> Result<Option<ResolvedDependencies>, Box<dyn error::Error>> {
-    let mut top_level = None;
+) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
+    let mut top_level = vec![];
 
     let mut futures = Vec::new();
     let mut downloaded = HashSet::new();
@@ -36,7 +36,7 @@ pub async fn download_packages(
         }
 
         if dep.is_root {
-            top_level = Some(dep.to_owned());
+            top_level.push(dep.to_owned());
         }
 
         futures.push(download_package_to_store(
