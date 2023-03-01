@@ -2,6 +2,7 @@ pub mod dependency_resolver;
 pub mod downloader;
 mod hardlink;
 mod http;
+pub mod install_manifest;
 pub mod install_package;
 pub mod npm;
 mod package_manifest;
