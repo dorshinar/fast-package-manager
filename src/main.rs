@@ -5,7 +5,6 @@ use fast_package_manager::{
     npm::VersionRangeSpecifier, DEPS_FOLDER, STORE_FOLDER,
 };
 use std::{collections::HashMap, env, fs, io::ErrorKind};
-use tokio::net::lookup_host;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

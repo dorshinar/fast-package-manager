@@ -20,7 +20,7 @@ use crate::{
     config::Config,
     http::get_package_tar,
     npm::{ResolvedDependencies, UrlString, Version},
-    DEPS_FOLDER, STORE_FOLDER,
+    STORE_FOLDER,
 };
 
 #[derive(Debug, Display, PartialEq)]
