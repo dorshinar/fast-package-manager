@@ -12,7 +12,7 @@
   "dependencies": {
     "is-even": "^1.0.0",
     "create-react-app": "^5.0.1",
-    "@next/env": "^13.2.3",
-    "svelte": "^3.55.1"
+    "@next/env": "^13.2.4",
+    "svelte": "^3.56.0"
   }
 }

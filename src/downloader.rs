@@ -6,6 +6,7 @@ use std::{
 };
 
 use async_compression::tokio::bufread::GzipDecoder;
+use derive_more::Display;
 use futures::{future::join_all, TryStreamExt};
 use tar::Archive;
 use tokio::{
@@ -16,16 +17,25 @@ use tokio::{
 use tokio_util::{compat::FuturesAsyncReadCompatExt, io::SyncIoBridge};
 
 use crate::{
+    config::Config,
     http::get_package_tar,
     npm::{ResolvedDependencies, UrlString, Version},
     DEPS_FOLDER, STORE_FOLDER,
 };
 
+#[derive(Debug, Display, PartialEq)]
+pub enum Error {
+    UnpackError,
+}
+
+impl error::Error for Error {}
+
 /// download packages to store.
 /// returns the top level package, if specified.
 pub async fn download_packages(
     packages: &Vec<ResolvedDependencies>,
-) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
+    config: &Config,
+) -> anyhow::Result<Vec<ResolvedDependencies>> {
     let mut top_level = vec![];
 
     let mut futures = Vec::new();
@@ -43,6 +53,7 @@ pub async fn download_packages(
             dep.version.name.clone(),
             dep.version.version.clone(),
             dep.version.dist.tarball.clone(),
+            config,
         ));
 
         downloaded.insert(&dep.version.dist.tarball);
@@ -65,8 +76,9 @@ pub async fn download_package_to_store(
     package_name: String,
     version: Version,
     tar: UrlString,
-) -> Result<(), Box<dyn error::Error>> {
-    let tar_content = get_package_tar(&tar).await.unwrap();
+    config: &Config,
+) -> anyhow::Result<()> {
+    let tar_content = get_package_tar(&tar, config).await.unwrap();
 
     let deps_dest = get_store_package_path(&package_name, &version);
 
@@ -89,9 +101,12 @@ pub async fn download_package_to_store(
             match file {
                 Ok(file) => {
                     let file_path = file.path().unwrap();
-                    let file_path = file_path.strip_prefix("package").unwrap();
+                    let file_path = match file_path.strip_prefix("package") {
+                        Ok(path) => path.to_path_buf(),
+                        Err(_) => file_path.to_path_buf(),
+                    };
 
-                    if extracted.contains(file_path) {
+                    if extracted.contains(&file_path) {
                         continue;
                     }
 
@@ -100,7 +115,7 @@ pub async fn download_package_to_store(
                     if let Some(parent) = file_path.parent() {
                         match std::fs::create_dir_all(deps_dest.join(parent)) {
                             Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
-                            Err(error) => return Err(Box::new(error)),
+                            Err(error) => return Err(error),
                             _ => {}
                         }
                     }
@@ -137,12 +152,4 @@ pub async fn download_package_to_store(
 
 pub fn get_store_package_path(package_name: &String, version: &Version) -> PathBuf {
     Path::new(STORE_FOLDER).join(format!("{}@{}", &package_name, &version))
-}
-
-pub fn get_local_store_package_path(package_name: &String, version: &Version) -> PathBuf {
-    Path::new(DEPS_FOLDER)
-        .join(STORE_FOLDER)
-        .join(format!("{}@{}", &package_name, &version))
-        .join("node_modules")
-        .join(&package_name)
 }

@@ -10,7 +10,7 @@ pub struct NpmPackage {
     pub parsed: NpmResolvedPackage,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct NpmResolvedPackage {
     pub name: String,
 
@@ -29,7 +29,15 @@ pub struct NpmPackageVersion {
     #[serde(default = "HashMap::new")]
     pub dependencies: HashMap<String, VersionRangeSpecifier>,
     pub dist: NpmVersionDist,
-    pub engines: Option<HashMap<String, VersionRangeSpecifier>>,
+    pub engines: Option<Engines>,
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Clone)]
+#[serde(untagged)]
+pub enum Engines {
+    Map(HashMap<String, VersionRangeSpecifier>),
+    Array(Vec<String>),
+    String(String),
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Eq, Hash)]

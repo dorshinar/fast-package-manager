@@ -3,7 +3,6 @@ use std::{
     env,
     fs::{self, File},
     io::BufReader,
-    path::Path,
 };
 
 use serde_json::Value;
@@ -27,7 +26,6 @@ pub async fn update_package_manifest(
 }
 
 fn update_manifest(packages_to_add: HashMap<String, VersionRangeSpecifier>) -> anyhow::Result<()> {
-    // Read the JSON contents of the file as an instance of `User`.
     let mut package_json = get_manifest_file()?;
 
     match &mut package_json {
@@ -61,7 +59,7 @@ fn update_manifest(packages_to_add: HashMap<String, VersionRangeSpecifier>) -> a
     Ok(())
 }
 
-fn get_manifest_file() -> anyhow::Result<Value> {
+pub fn get_manifest_file() -> anyhow::Result<Value> {
     let mut manifest_path = env::current_dir()?.join("package.json");
 
     while !manifest_path.exists() {
@@ -79,7 +77,6 @@ fn get_manifest_file() -> anyhow::Result<Value> {
     let file = File::open(manifest_path)?;
     let reader = BufReader::new(file);
 
-    // Read the JSON contents of the file as an instance of `User`.
     let package_json: Value = serde_json::from_reader(reader)?;
 
     Ok(package_json)

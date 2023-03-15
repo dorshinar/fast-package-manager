@@ -1,24 +1,22 @@
 use futures::future::join_all;
-use std::{
-    collections::HashMap,
-    error::{self},
-};
+use std::collections::HashMap;
 
 use crate::{
+    config::Config,
     dependency_resolver::resolve_deps,
     downloader::download_packages,
-    hardlink::hardlink_package,
+    linker::{hardlink_package, symlink_dep, symlink_direct},
     npm::VersionRangeSpecifier,
     package_manifest::update_package_manifest,
-    symlink::{symlink_dep, symlink_direct},
 };
 
 pub async fn install_package(
     deps: HashMap<String, VersionRangeSpecifier>,
-) -> Result<(), Box<dyn error::Error>> {
-    let resolved_deps = resolve_deps(deps).await?;
+    config: &Config,
+) -> anyhow::Result<()> {
+    let resolved_deps = resolve_deps(deps, config).await?;
 
-    let top_level = download_packages(&resolved_deps).await?;
+    let top_level = download_packages(&resolved_deps, config).await?;
 
     let mut futures = vec![];
     for dep in resolved_deps.iter() {

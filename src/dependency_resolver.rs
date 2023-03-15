@@ -1,11 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet},
-    error,
-};
+use std::collections::{HashMap, HashSet};
 
-use futures::{future::join_all, FutureExt};
+use futures::{stream::FuturesUnordered, StreamExt};
 
 use crate::{
+    config::Config,
     http::get_npm_package,
     npm::{NpmPackageVersion, ResolvedDependencies, ResolvedDependencyTree, VersionRangeSpecifier},
     resolve_version_range::resolve_version_from_version_range,
@@ -19,11 +17,20 @@ pub enum Error {
 
 pub async fn resolve_deps(
     deps: HashMap<String, VersionRangeSpecifier>,
-) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
-    let mut package_to_get_from_npm = HashSet::new();
+    client: &Config,
+) -> anyhow::Result<Vec<ResolvedDependencies>> {
+    // let mut package_to_get_from_npm = HashSet::new();
+    let mut futures = FuturesUnordered::new();
+    let mut fetched_packages = HashSet::new();
 
     for (dep_name, dep_version_range) in deps {
-        package_to_get_from_npm.insert((dep_name, dep_version_range, true));
+        // package_to_get_from_npm.insert((dep_name, dep_version_range, true));
+        if fetched_packages.contains(&dep_name) {
+            continue;
+        }
+        let future = get_npm_package_version(dep_name.clone(), dep_version_range, true, client);
+        fetched_packages.insert(dep_name);
+        futures.push(future);
     }
 
     let mut resolved_versions: HashMap<
@@ -31,73 +38,154 @@ pub async fn resolve_deps(
         HashMap<VersionRangeSpecifier, (NpmPackageVersion, bool)>,
     > = HashMap::new();
 
-    let mut fetched_packages = HashSet::new();
+    // while !package_to_get_from_npm.is_empty() {
+    // let mut futures = FuturesUnordered::new();
+    // for package in package_to_get_from_npm.iter() {
+    //     if fetched_packages.contains(&package.0) {
+    //         continue;
+    //     }
+    //     let future =
+    //         get_npm_package_version(package.0.clone(), package.1.clone(), package.2, client);
+    //     fetched_packages.insert(package.0.clone());
+    //     futures.push(future);
+    // }
 
-    while !package_to_get_from_npm.is_empty() {
-        let mut futures = Vec::new();
-        for package in package_to_get_from_npm.iter() {
-            if fetched_packages.contains(&package.0) {
-                continue;
-            }
-            let future = get_npm_package_version(&package.0, &package.1)
-                .then(|version| async { (package.1.to_owned(), version, package.2) });
-            fetched_packages.insert(package.0.clone());
-            futures.push(future);
-        }
+    // let mut versions: Vec<(
+    //     VersionRangeSpecifier,
+    //     Result<NpmPackageVersion, anyhow::Error>,
+    //     bool,
+    // )> = vec![];
 
-        let versions = join_all(futures).await;
+    // for fut in futures
+    //     .take(100)
+    //     .collect::<Vec<(
+    //         VersionRangeSpecifier,
+    //         Result<NpmPackageVersion, anyhow::Error>,
+    //         bool,
+    //     )>>()
+    //     .await
+    // {
+    //     versions.push(fut);
+    // }
+    // versions.push(join_all(futures).await.iter().tak)
+    //  = join_all(futures).await;
 
-        package_to_get_from_npm.clear();
+    // package_to_get_from_npm.clear();
 
-        for (range, version, is_root) in versions {
-            match version {
-                Ok(version) => {
-                    for dep in &version.dependencies {
-                        match resolved_versions.get(dep.0) {
-                            Some(ranges) if !ranges.contains_key(dep.1) => {
-                                package_to_get_from_npm.insert((
-                                    dep.0.to_owned(),
-                                    dep.1.to_owned(),
-                                    false,
-                                ));
-                            }
-                            Some(_) => {}
-                            None => {
-                                package_to_get_from_npm.insert((
-                                    dep.0.to_owned(),
-                                    dep.1.to_owned(),
-                                    false,
-                                ));
-                            }
+    loop {
+        match futures.next().await {
+            Some(Ok((range, version, is_root))) => {
+                let version_clone = version.clone();
+                for (dep_name, dep_version_range) in version.dependencies {
+                    match resolved_versions.get(&dep_name) {
+                        Some(ranges) if !ranges.contains_key(&dep_version_range) => {
+                            let future =
+                                get_npm_package_version(dep_name, dep_version_range, false, client);
+                            // .then(|version| {
+                            // return (
+                            //     String::from(""),
+                            //     VersionRangeSpecifier::new(String::from("")),
+                            //     false,
+                            // );
+                            // });
+                            futures.push(future);
+                            // package_to_get_from_npm.insert((
+                            //     dep.0.to_owned(),
+                            //     dep.1.to_owned(),
+                            //     false,
+                            // ));
                         }
-                    }
-
-                    match resolved_versions.get_mut(&version.name) {
-                        Some(range_to_versions) => {
-                            range_to_versions.insert(range, (version, is_root));
-                        }
+                        Some(_) => {}
                         None => {
-                            let version_name = version.name.clone();
-
-                            let mut range_to_version = HashMap::new();
-                            range_to_version.insert(range, (version, is_root));
-                            resolved_versions.insert(version_name, range_to_version);
+                            // package_to_get_from_npm.insert((
+                            //     dep.0.to_owned(),
+                            //     dep.1.to_owned(),
+                            //     false,
+                            // ));
                         }
                     }
                 }
-                Err(error) => {
-                    return Err(error);
+
+                match resolved_versions.get_mut(&version.name) {
+                    Some(range_to_versions) => {
+                        range_to_versions.insert(range.clone(), (version_clone, is_root.clone()));
+                    }
+                    None => {
+                        let version_name = version.name.clone();
+
+                        let mut range_to_version = HashMap::new();
+                        range_to_version.insert(range.clone(), (version_clone, is_root.clone()));
+                        resolved_versions.insert(version_name, range_to_version);
+                    }
                 }
+            }
+            Some(Err(_)) => {}
+            None => {
+                break;
             }
         }
     }
+    // while let Some(Ok((range, version, is_root))) = &futures.next().await {
+    //     // match version {
+    //     //     Ok(version) => {
+    //     for (dep_name, dep_version_range) in &version.dependencies {
+    //         match resolved_versions.get(dep_name) {
+    //             Some(ranges) if !ranges.contains_key(dep_version_range) => {
+    //                 let name = String::from("");
+    //                 let future =
+    //                     get_npm_package_version(dep_name, dep_version_range, false, client);
+    //                 // .then(|version| {
+    //                 // return (
+    //                 //     String::from(""),
+    //                 //     VersionRangeSpecifier::new(String::from("")),
+    //                 //     false,
+    //                 // );
+    //                 // });
+    //                 futures.push(future);
+    //                 // package_to_get_from_npm.insert((
+    //                 //     dep.0.to_owned(),
+    //                 //     dep.1.to_owned(),
+    //                 //     false,
+    //                 // ));
+    //             }
+    //             Some(_) => {}
+    //             None => {
+    //                 // package_to_get_from_npm.insert((
+    //                 //     dep.0.to_owned(),
+    //                 //     dep.1.to_owned(),
+    //                 //     false,
+    //                 // ));
+    //             }
+    //         }
+    //     }
+
+    //     match resolved_versions.get_mut(&version.name) {
+    //         Some(range_to_versions) => {
+    //             range_to_versions.insert(range.clone(), (version.clone(), is_root.clone()));
+    //         }
+    //         None => {
+    //             let version_name = version.name.clone();
+
+    //             let mut range_to_version = HashMap::new();
+    //             range_to_version.insert(range.clone(), (version.clone(), is_root.clone()));
+    //             resolved_versions.insert(version_name, range_to_version);
+    //         }
+    //     }
+    //     //     }
+    //     //     Err(error) => {
+    //     //         println!("{:?}", error);
+    //     //         return Err(Error::DependencyResolveError.into());
+    //     //     }
+    //     // }
+    // }
+    // }
 
     construct_dependency_vec(resolved_versions)
 }
 
 pub fn construct_dependency_vec(
     resolved: HashMap<String, HashMap<VersionRangeSpecifier, (NpmPackageVersion, bool)>>,
-) -> Result<Vec<ResolvedDependencies>, Box<dyn error::Error>> {
+) -> anyhow::Result<Vec<ResolvedDependencies>> {
     let mut resolved_deps = vec![];
 
     for (_package, ranges) in resolved.iter() {
@@ -127,7 +215,7 @@ pub fn construct_dependency_tree(
     root_name: &String,
     root_range: &VersionRangeSpecifier,
     resolved_versions: &HashMap<String, HashMap<VersionRangeSpecifier, NpmPackageVersion>>,
-) -> Result<ResolvedDependencyTree, Box<dyn error::Error>> {
+) -> anyhow::Result<ResolvedDependencyTree> {
     let root_resolved_version = match resolved_versions.get(root_name) {
         Some(versions) => versions.get(&root_range),
         None => None,
@@ -136,7 +224,7 @@ pub fn construct_dependency_tree(
     let root_resolved_version = match root_resolved_version {
         Some(version) => version.to_owned(),
         None => {
-            return Err(Box::new(Error::VersionDoesNotExist));
+            return Err(Error::VersionDoesNotExist.into());
         }
     };
 
@@ -156,10 +244,15 @@ pub fn construct_dependency_tree(
 }
 
 async fn get_npm_package_version(
-    package_name: &String,
-    version: &VersionRangeSpecifier,
-) -> Result<NpmPackageVersion, Box<dyn error::Error>> {
-    let package = get_npm_package(package_name).await?;
+    package_name: String,
+    version_range: VersionRangeSpecifier,
+    is_root: bool,
+    client: &Config,
+) -> anyhow::Result<(VersionRangeSpecifier, NpmPackageVersion, bool)> {
+    let package = get_npm_package(&package_name, client).await?;
 
-    resolve_version_from_version_range(&package, version).map_err(|error| error.into())
+    let version =
+        resolve_version_from_version_range(&package, &version_range).map_err(|error| error)?;
+
+    Ok((version_range.to_owned(), version, is_root))
 }
